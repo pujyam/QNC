@@ -39,8 +39,9 @@
     Also invokes the quantum netlist compiler (../qc executable binary) to generate out.qasm
 * Date: 20 Nov, 2017
 *
-* Example: ./create.lua 5 01 P I ../ibmqx4.top ../phys5.map
-* Example: ./create.lua 16 11 P I ../ibmqx5.top
+* Example: ./create 01 -top ../ibmqx4.top -map ../phys5.map
+* Example: ./create 01 -I -top ../ibmqx4.top -map ../phys5.map
+* Example: ./create 11 -top ../ibmqx4.top -map ../phys5.map
 --]]
 
 function showUsage()
