@@ -211,8 +211,10 @@ inline void usageExit(const string& execName) {
             "\t-I:   Uses inline operator. Default is to use a function/procedure for the operator gate. (optional)\n"
             "\t-O:   Perform optimizations by merging and removing gates whenever possible. (optional)\n"
             "\t-v:   Sets verbose mode for printing lots of debug information. (optional)\n\n"
-            "Copyright: Intended to be open-source (no LACC yet).\n"
-            "           Please remember to cite this work if you find the code helpful in any way.\n\n";
+            "Copyright: Open-source BSD-3 license (LANL LACC# C18030 - QNC: Quantum Netlist Compiler).\n"
+            "           If you found this useful, please cite this work, and also the original author.\n"
+            "           This is the only means by which the author gets credit.\n"
+            "           Again, please remember to cite this work if you find the code helpful in any way.\n\n";
     exit(0);
 }
 
