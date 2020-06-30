@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#This little script helps in extracting (single-line only for now) function
+#declaration strings from C++ files, for easily generating header files
+ctags -x --c++-kinds=pf --language-force=c++ $1 | awk '{for(i=5;$i!="{";i++) {printf $i " "} ; printf ";\n"}' | sed 's/ ;/;/g'  | egrep -v "^inline*"

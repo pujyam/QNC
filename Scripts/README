@@ -1,0 +1,15 @@
+ibmqx*.top: Adjacency matrices for the directed graph topology of the corresponding IBM-QX machine
+phys5.map: Example permutation matrix (in Cauchy's single line notation) to map your unitary operator's logical qubits to physical qubits for a 5-qubit machine
+
+QNC Usage Examples:
+
+1. StatePrep
+In this example, a quantum-circuit is generated which, given state |0> as input, prepares a specified state-vector as output.
+
+2. Hadamard
+In this example, a quantum-circuit is generated which acts as H_{2^n} on input. Since the compiler uses a generic construction technique, the resulting circuit is functionally correct, but not always as concise as a generative circuit might be. For example, H_{2^n} can be decomposed as the Kronecker product of n H_2's.
+
+3. BV
+In this example, a hidden-string blackbox circuit is generated, given the hidden-string as input.
+The circuit implements:
+{vec{x}, y} => {vec{x}, f(x) + y}, where for the Bernstein-Vazirani algorithm, f(x) = <vec{a}, vec{x}>, the dot product of hidden-string binary vector vec{a} and input vec{x}.

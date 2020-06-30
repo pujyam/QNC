@@ -1,0 +1,316 @@
+#!/usr/bin/env luajit
+--[[
+##############################################################################
+# © Copyright 2017-. Triad National Security, LLC. All rights reserved.
+#
+# This program was produced under U.S. Government contract 89233218CNA000001 for Los Alamos National Laboratory (LANL), which is operated by Triad National Security, LLC for the U.S. Department of Energy/National Nuclear Security Administration.
+#
+# All rights in the program are reserved by Triad National Security, LLC, and the U.S. Department of Energy/National Nuclear Security Administration. The Government is granted for itself and others acting on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this material to reproduce, prepare derivative works, distribute copies to the public, perform publicly and display publicly, and to permit others to do so.
+#
+# This is open source software; you can redistribute it and/or modify it under the terms of the BSD 3-clause License. If software is modified to produce derivative works, such modified software should be clearly marked, so as not to confuse it with the version available from LANL. Full text of the BSD 3-clause License can be found in the License file in the main development branch of the repository.
+#
+##############################################################################
+# BSD 3-clause license:
+# Copyright 2017- Triad National Security, LLC
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+##############################################################################
+# Author: Nandakishore Santhi
+# Date: 28 November, 2017
+# Copyright: Open source, must acknowledge original author
+# Purpose: Compile a Quantum Computer Algorithm (as a unitary operator) into a QASM code that can run directly
+# on IBM-QX physical machines or QISKit simulator.
+# LACC#: LANL LACC# C18030 - QNC: Quantum Netlist Compiler
+#
+##############################################################################
+--Author: Nandakishore Santhi <nsanthi@lanl.gov>
+--Date: 30 Nov 2017
+--Purpose: Converts OPENQASM input from a file to a pdf of the quantum circuit in contemporary form:-
+--      Only supported gates are: x, h, cx, u1, u2, u3.
+--      Comments starting with "//" in any line are ignored till end of line.
+--      Partially supported keywords: OPENQASM, include, qreg, creg, barrier
+--      All other gates and keywords will generate errors.
+--
+--Usage Example:
+--  Usage: ./qasm2pdf revcnot.qasm revcnot param simple
+-- to generate the file revcnot.pdf
+--
+--Dependencies: Luajit and pdflatex (with packages tikz, xcolor, standalone)
+--]]
+
+function string:split(pat)
+    local t = {}
+    local fpat = "(.-)" .. pat
+    local last_end = 1
+    local s, e, cap = self:find(fpat, 1)
+    while s do
+        if s ~= 1 or cap ~= "" then
+            table.insert(t,cap)
+        end
+        last_end = e+1
+        s, e, cap = self:find(fpat, last_end)
+    end
+    if last_end <= #self then
+        cap = self:sub(last_end)
+        table.insert(t, cap)
+    end
+    return t
+end
+
+function string:strip()
+    local from = self:match"^%s*()"
+    return from > #self and "" or self:match(".*%S", from)
+end
+
+local function getQubitId(name)
+    return tonumber(name:match("(%d)"))
+end
+
+local function parseQASM(file)
+    print("Reading QASM from: " .. file)
+
+    local qasm = {}
+    for line in io.lines(file) do
+        if line ~= "" then
+            local noComments = line:split("/")[1]:strip()
+            if noComments ~= "" then
+                local field = line:split("[%s(),;]+")
+                if field[1] ~= "OPENQASM" and field[1] ~= "include"
+                  and field[1] ~= "qreg" and field[1] ~= "creg"
+                  and field[1] ~= "barrier" then --Ignore things which are irrelavent
+                    local gate = field[1]
+                    local t, c, param
+                    if gate == "x" then
+                        t = getQubitId(field[#field])
+                    elseif gate == "h" then
+                        t = getQubitId(field[#field])
+                    elseif gate == "u1" then
+                        t = getQubitId(field[#field])
+                        param = {field[2]}
+                    elseif gate == "u2" then
+                        t = getQubitId(field[#field])
+                        param = {field[2], field[3]}
+                    elseif gate == "u3" then
+                        t = getQubitId(field[#field])
+                        param = {field[2], field[3], field[4]}
+                    elseif gate == "cx" then
+                        c = getQubitId(field[2])
+                        t = getQubitId(field[#field])
+                    elseif gate == "measure" then
+                        t = getQubitId(field[2])
+                        c = getQubitId(field[#field])
+                    else
+                        print("ERROR: Unknown gate " .. gate .. " ! Only known gates are h, x, cx, u1, u2, u3")
+                        os.exit(1)
+                    end
+                    --print("GATE " .. gate .. "(" .. t .. (c and (", " .. c .. ")") or ")") .. "\n")
+                    table.insert(qasm, {name=gate, t=t, c=c, param=param})
+                end
+            end
+        end
+    end
+    return qasm
+end
+
+local function add2Matrix(matrix, time, qubit, node)
+    if not matrix[time] then matrix[time] = {} end
+    matrix[time][qubit] = node
+    matrix.qubits[qubit] = true
+end
+
+local function getGateName(gate, param)
+    local name
+    if not param then
+        return "$U_" .. #gate.param .. "$"
+    else
+        name = "\\begin{tabular}{c} $U_" .. #gate.param .. "$\\\\[-1.3ex]"
+        for key,par in ipairs(gate.param) do
+            name = name .. (key == 1 and "" or "\\\\[-1.3ex]") .. "{\\tiny{\\hspace*{-1.5pt}\\color{Blue} " .. par .. "\\hspace*{-1.5pt}}}"
+        end
+        name = name .. "\\end{tabular}"
+    end
+    return name
+end
+
+local function writeLatex(qasm, file, param, box, simple)
+    local header=
+[[\documentclass[10pt]{standalone}
+\usepackage[dvipsnames]{xcolor}
+%\def\pgfsysdriver{pgfsys-tex4ht.def}
+\usepackage{tikz}
+
+% TikZ libraries `calc` needed now to tweak bracket.
+\usetikzlibrary{backgrounds,fit,decorations.pathreplacing,calc}
+% Dirac Kets
+\newcommand{\ket}[1]{\ensuremath{\left|#1\right\rangle}}
+\newcommand{\bra}[1]{\ensuremath{\left\langle#1\right|}}
+\newcommand{\braket}[1]{\ensuremath{\left\langle#1\right\rangle}}
+\newcommand{\qubitline}{\draw[thick]}
+\newcommand{\cbitline}{\draw[thick,double]}
+
+\begin{document}
+\scalebox{0.4}{
+\begin{tikzpicture}[thick,scale=1]
+% `operator' is a general operator -- used here for only Hadamard (H) gates
+% `U' is a U() operator with parameters
+% `O' is used for CNOT and XOR
+% `tap' is used for controlled phase gates (dots)
+% `surround' is used for the background box
+\tikzstyle{operator} = [draw,minimum size=1.5em,fill=Cyan!60]
+]] ..
+(param and "\\tikzstyle{U} = [draw,minimum size=0.5em,inner sep=-0.3pt,fill=Orange!70]"
+    or "\\tikzstyle{U} = [draw,minimum size=1.5em,fill=Orange!70]") ..
+[[
+\tikzstyle{O} = [draw,minimum size=5pt,inner sep=0pt,circle,fill=Green!40]
+\tikzstyle{tap} = [draw,fill,shape=circle,minimum size=3pt,inner sep=0pt]
+\tikzstyle{measure} = [draw,double,minimum size=1.5em,inner sep=0pt,circle,fill=Red!60,inner sep=1pt]
+\tikzstyle{surround} = [fill=blue!10,thick,draw=black,rounded corners=2mm]
+%
+]]
+    local footer=
+[[%
+\end{tikzpicture}
+}
+\end{document}
+]]
+    local fp = io.open(file, "w")
+    fp:write(header)
+
+    --"qasm" is a table with gates in time-order
+    local time = 1
+    local matrix, qline, cline, vline = {qubits={}, measure={}}, {}, {}, {}
+    for serial,gate in ipairs(qasm) do
+        if gate.name == 'cx' then
+            if matrix[time] then time = time + 1 end --Increment time if this time is already occupied
+        else
+            if matrix[time] and matrix[time][gate.t] then time = time + 1 end --Increment time if this time is already occupied
+        end
+
+        if gate.name:sub(1, 1) == 'u' then --u1, u2, u3
+            local tName = 'P_' .. gate.t .. "_" .. time
+            local name = getGateName(gate, param)
+            add2Matrix(matrix, time, gate.t, "\\node[U] (" .. tName .. ") {" .. name .. "};")
+            qline[gate.t+1] = "(q_" .. gate.t .. ") -- (end_" .. gate.t .. ")"
+        elseif gate.name == 'cx' then
+            local tName = 'P_' .. gate.t .. "_" .. time
+            local cName = 'P_' .. gate.c .. "_" .. time
+            add2Matrix(matrix, time, gate.t, "\\node[O] (" .. tName .. ") {+};")
+            add2Matrix(matrix, time, gate.c, "\\node[tap] (" .. cName .. ") {};")
+            qline[gate.t+1] = "(q_" .. gate.t .. ") -- (end_" .. gate.t .. ")"
+            qline[gate.c+1] = "(q_" .. gate.c .. ") -- (end_" .. gate.c .. ")"
+            vline[#vline+1] = "(" .. tName .. ") -- (" .. cName .. ")"
+            time = time + 1
+        elseif gate.name == 'measure' then
+            local tName = 'P_' .. gate.t .. "_" .. time
+            local cName = 'P_' .. gate.c .. "_" .. time
+            matrix.measure[gate.t] = true
+            add2Matrix(matrix, time, gate.t, "\\node[measure] (" .. tName .. ") {{{\\color{White}\\small$\\mathbf\\nearrow$}}};")
+            qline[gate.t+1] = "(q_" .. gate.t .. ") -- (" .. tName .. ")"
+            cline[gate.t+1] = "(" .. tName .. ") -- (end_" .. gate.t .. ")"
+        else --x, h
+            local tName = 'P_' .. gate.t .. "_" .. time
+            add2Matrix(matrix, time, gate.t, "\\node[operator] (" .. tName .. ") {" .. gate.name:upper() .. "};")
+            qline[gate.t+1] = "(q_" .. gate.t .. ") -- (end_" .. gate.t .. ")"
+        end
+    end
+
+    fp:write("\\matrix[row sep=0.4cm, column sep=0.8cm, ampersand replacement=\\&] (circuit) {\n")
+    for qubit=0,#matrix.qubits do
+        if matrix.qubits[qubit] then
+            fp:write("%Row " .. qubit .. "\n")
+            for t = 1,#matrix do
+                node = matrix[t][qubit]
+                if t == 1 then
+                    if not simple then
+                        fp:write("\\node (q_" .. qubit .. ") {$q_" .. qubit .. " = \\ket{0}$}; \\& ")
+                    else
+                        fp:write("\\node (q_" .. qubit .. ") {}; \\& ")
+                    end
+                end
+                if node then
+                    fp:write(node .. " ")
+                else
+                    fp:write(" ")
+                end
+                if t == #matrix then
+                    fp:write(" \\& \\coordinate (end_" .. qubit .. "); \\\\\n")
+                else
+                    fp:write(" \\& ")
+                end
+            end
+        end
+    end
+    fp:write("};\n%\n")
+
+    fp:write("\\begin{pgfonlayer}{background}\n")
+    if box then
+        fp:write("\t%Draw background box\n")
+        if param then
+            fp:write("\t\\node[surround] (background) [fit = (q_0) (q_" .. #matrix.qubits .. ") (end_0) (end_" .. #matrix.qubits .. ")] {};\n")
+        else
+            fp:write("\t\\coordinate (C1) at ($(q_0) + (-1, 1)$);")
+            fp:write("\t\\coordinate (C2) at ($(q_" .. #matrix.qubits .. ") + (-1, -1)$);")
+            fp:write("\t\\coordinate (C3) at ($(end_0) + (1, 1)$);")
+            fp:write("\t\\coordinate (C4) at ($(end_" .. #matrix.qubits .. ") + (1, -1)$);")
+            fp:write("\t\\node[surround] (background) [fit = (C1) (C2) (C3) (C4)] {};\n")
+        end
+    end
+    if #qline > 0 then
+        fp:write("\t%Horizontal qubit lines\n\t\\qubitline ")
+        for _,line in pairs(qline) do fp:write(line .. " ") end
+        fp:write(";\n")
+    end
+    if #cline > 0 then
+        fp:write("\t%Horizontal classical lines\n\t\\cbitline ")
+        for _,line in pairs(cline) do fp:write(line .. " ") end
+        fp:write(";\n")
+    end
+    if #vline > 0 then
+        fp:write("\t%Vertical control lines\n\t\\qubitline ")
+        for _,line in pairs(vline) do fp:write(line .. " ") end
+        fp:write(";\n")
+    end
+    fp:write("\\end{pgfonlayer}\n")
+
+    fp:write(footer)
+    fp:close()
+end
+
+if #arg < 2 or arg[1] == '-h' then
+    print("\nUsage: " .. arg[0] .. " [-h] inFile.qasm outFile [param] [simple] [box]\n")
+else
+    local qasmFile, outFile = arg[1], arg[2]:split("[.]")[1]
+    local qasm = parseQASM(qasmFile)
+
+    local param, box, simple
+    for i=3,#arg do
+        if arg[i] == "param" then
+            param = true
+        elseif arg[i] == "box" then
+            box = true
+        elseif arg[i] == "simple" then
+            simple = true
+        end
+    end
+
+    writeLatex(qasm, outFile .. ".tex", param, box, simple)
+
+    os.execute("pdflatex " .. outFile .. ".tex")
+    os.execute("rm -f " .. outFile .. ".aux " .. outFile .. ".log")
+    --os.execute("rm -f " .. outFile .. ".tex " .. outFile .. ".aux " .. outFile .. ".log")
+    --
+    --os.execute("htlatex " .. outFile .. ".tex")
+    --
+    --os.execute("latex " .. outFile .. ".tex")
+    --os.execute("dvisvgm --font-format=woff " .. outFile .. ".dvi")
+    --
+end

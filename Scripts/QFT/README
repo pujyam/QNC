@@ -1,0 +1,3 @@
+F2: 2-qubit QFT
+F4: 4-qubit QFT
+err: Matrix specification has an error. Armadillo matrix reader expects *no spaces* inside the brackets for complex numbers.

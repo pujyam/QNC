@@ -1,0 +1,11 @@
+Please see http://arma.sourceforge.net/license.html
+
+Armadillo is open source software.
+
+Armadillo versions 7.800 and onwards are licensed under the Apache License 2.0.
+
+The Apache license allows Armadillo to be used in proprietary software, without releasing the source code. However, any software that incorporates or distributes Armadillo in source or binary form must include a readable copy of the attributions in the NOTICE.txt file that comes with Armadillo. The attributions can be placed in the documentation and/or other materials provided with the software.
+
+The Apache license is a permissive license similar to the MIT and BSD licenses, but also provides a grant of patent rights from contributors to users. As such, the Apache license can be thought of as an improved version of the MIT and BSD licenses.
+
+See the Questions page for more info.

@@ -1,0 +1,4 @@
+a) File qc.cpp: Quantum Netlist Compiler
+b) File Makefile: Makefile for Quantum Netlist Compiler. Just run make to compile qc.cpp. No non-standard libraries are needed; just a recent C++ compiler which supports C++14 standards (recent g++ or clang++ should work)
+c) Directory Scripts: Lua scripts to generate code for Bernstein-Vazirani and Hadamard (for verification). Also contains topology models for 3 currently available IBM-QX machines
+d) Directory QIS: Python scripts to run generated OPENQASM-2.0 code on local-simulator, IBM-remote-simulator, and IBM-remote-physical-machines

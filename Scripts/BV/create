@@ -1,0 +1,213 @@
+#!/usr/bin/env luajit
+--[[
+##############################################################################
+# © Copyright 2017-. Triad National Security, LLC. All rights reserved.
+#
+# This program was produced under U.S. Government contract 89233218CNA000001 for Los Alamos National Laboratory (LANL), which is operated by Triad National Security, LLC for the U.S. Department of Energy/National Nuclear Security Administration.
+#
+# All rights in the program are reserved by Triad National Security, LLC, and the U.S. Department of Energy/National Nuclear Security Administration. The Government is granted for itself and others acting on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this material to reproduce, prepare derivative works, distribute copies to the public, perform publicly and display publicly, and to permit others to do so.
+#
+# This is open source software; you can redistribute it and/or modify it under the terms of the BSD 3-clause License. If software is modified to produce derivative works, such modified software should be clearly marked, so as not to confuse it with the version available from LANL. Full text of the BSD 3-clause License can be found in the License file in the main development branch of the repository.
+#
+##############################################################################
+# BSD 3-clause license:
+# Copyright 2017- Triad National Security, LLC
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+##############################################################################
+# Author: Nandakishore Santhi
+# Date: 28 November, 2017
+# Copyright: Open source, must acknowledge original author
+# Purpose: Compile a Quantum Computer Algorithm (as a unitary operator) into a QASM code that can run directly
+# on IBM-QX physical machines or QISKit simulator.
+# LACC#: LANL LACC# C18030 - QNC: Quantum Netlist Compiler
+#
+##############################################################################
+* Author: Nandakishore Santhi <nsanthi@lanl.gov>
+* Copyright: Intended to be open-source. Please be sure to acknowledge author if you use this code
+* Purpose:
+    Create main.qasm and P.qasm blackbox-operator for given hidden string
+    Also invokes the quantum netlist compiler (../qc executable binary) to generate out.qasm
+* Date: 20 Nov, 2017
+*
+* Example: ./create.lua 5 01 P I ../ibmqx4.top ../phys5.map
+* Example: ./create.lua 16 11 P I ../ibmqx5.top
+--]]
+
+function showUsage()
+    print("Usage: " .. arg[0] .. " S [-h] [-iU] [-v] [-I] [-top machine.top] [-map phy.map]")
+    print("\tFirst argument S is a hidden binary string in the Bernstein-Vazirani algorithm")
+    print("\t For example, we can use the string '1011' for S (without quotes)")
+    print("\t-h: Display usage help (this message)")
+    print("\tOther arguments are similar to corresponding ones in QNC. Any arguments not shown are simply passed on as is to QNC.")
+    os.exit(1)
+end
+
+function string:split(inSplitPattern, outResults)
+   if not outResults then
+      outResults = { }
+   end
+   local theStart = 1
+   local theSplitStart, theSplitEnd = string.find(self, inSplitPattern, theStart)
+   while theSplitStart do
+      table.insert(outResults, string.sub(self, theStart, theSplitStart-1))
+      theStart = theSplitEnd + 1
+      theSplitStart, theSplitEnd = string.find( self, inSplitPattern, theStart)
+   end
+   table.insert(outResults, string.sub(self, theStart))
+   return outResults
+end
+
+--Parse all options
+if #arg < 1  or arg[1] == '-h' then showUsage() end
+
+local s = arg[1]
+print("Hidden string is: " .. s .. "\n")
+
+local optArgs = "../../qc -oq out.qasm"
+local useUnitary, useInline = false, false
+local topHeader
+local i=2
+while (i <= #arg) do
+    if arg[i] == '-iU' then
+        useUnitary = true
+        i = i+1
+    elseif arg[i] == '-v' then
+        optArgs = optArgs .. " -v"
+        i = i+1
+    elseif arg[i] == '-I' then
+        useInline = true
+        optArgs = optArgs .. " -I"
+        i = i+1
+    elseif arg[i] == '-O' then
+        optArgs = optArgs .. " -O"
+        i = i+1
+    elseif arg[i] == '-top' then
+        topHeader = io.lines(arg[i+1])()
+        optArgs = optArgs .. " -top " .. arg[i+1]
+        i = i+2
+    elseif arg[i] == '-map' then
+        optArgs = optArgs .. " -map " .. arg[i+1]
+        i = i+2
+    elseif arg[i] == '-h' then
+        showUsage()
+    else
+        optArgs = optArgs .. " " .. arg[i]
+        i = i+1
+    end
+end
+
+if useUnitary then
+    if useInline then
+        optArgs = optArgs .. " -lq mainInline0.qasm -iU U.op -lq mainInline1.qasm"
+    else
+        optArgs = optArgs .. " -iU U.op -lq main.qasm"
+    end
+else
+    if useInline then
+        optArgs = optArgs .. " -lq mainInline0.qasm -iP P.op -lq mainInline1.qasm"
+    else
+        optArgs = optArgs .. " -iP P.op -lq main.qasm"
+    end
+end
+--End parse-options
+
+
+--Blackbox operator for Bernstein-Vazirani is an involution (which is a type of permutation) operator
+--It maps (a, Y) |-> (a+<s,Y>, Y)
+local S, n = tonumber(s, 2), #s
+
+local W = topHeader and #(topHeader:split("%s+")) or (n+1)
+print("Inferred qreg width: ", W, "\n")
+
+local fp
+if useInline then --Split the main.qasm stub into 2 parts
+    fp = io.open("mainInline0.qasm", "w")
+    fp:write("qreg q[" .. W .. "];\n")
+    fp:write("creg c[" .. n .. "];\n\n")
+
+    fp:write("//State preparation\n")
+    fp:write("x q[" .. n .. "];\n")
+    for i=0,n do fp:write("h q[" .. i .. "];\n") end
+    fp:close()
+
+    fp = io.open("mainInline1.qasm", "w")
+    for i=0,n-1 do fp:write("h q[" .. i .. "];\n") end
+    fp:write("\n")
+
+    fp:write("//Measurement\n")
+    fp:write("barrier q;\n")
+    for i=0,n-1 do fp:write("measure q[" .. i .. "] -> c[" .. i .. "];\n") end
+    fp:close()
+else --In this case, main.qasm stub is a single file
+    local fp = io.open("main.qasm", "w")
+    fp:write("qreg q[" .. (n+1) .. "];\n")
+    fp:write("creg c[" .. n .. "];\n\n")
+
+    fp:write("//State preparation\n")
+    fp:write("x q[" .. n .. "];\n")
+    for i=0,n-1 do fp:write("h q[" .. i .. "];\n") end
+    fp:write("\n")
+
+    fp:write("operator ")
+    for i=0,n do
+        if i ~= 0 then fp:write(",") end
+        fp:write("q[" .. i .. "]")
+    end
+    fp:write(";\n\n")
+
+    for i=0,n-1 do fp:write("h q[" .. i .. "];\n") end
+    fp:write("\n")
+
+    fp:write("//Measurement\n")
+    fp:write("barrier q;\n")
+    for i=0,n-1 do fp:write("measure q[" .. i .. "] -> c[" .. i .. "];\n") end
+    fp:close()
+end
+
+local P = {}
+local N = bit.lshift(1, n)
+for a=0,1 do
+    for Y=0,N-1 do
+        local x = a
+        for b=0,n-1 do
+            if (bit.band(bit.rshift(Y, b), 0x1) == 1) then
+                x = bit.bxor(x, bit.band(bit.rshift(S, b), 0x1))
+            end
+        end
+        --x is now a+<s,Y>
+        --Save the permutation mapping (a, Y) |-> (a+<s,Y>, Y)
+        P[bit.lshift(a, n) + Y] = bit.lshift(x, n) + Y
+    end
+end
+
+fp = io.open("P.op", "w")
+for i=0,2*N-1 do
+    if i ~= 0 then fp:write(" ") end
+    fp:write(P[i])
+end
+fp:write("\n")
+fp:close()
+
+local fp = io.open("U.op", "w")
+for i=0,2*N-1 do
+    for j=0,2*N-1 do
+        if j ~= 0 then fp:write(" ") end
+        if P[i] == j then fp:write(1) else fp:write(0) end
+    end
+    fp:write("\n")
+end
+fp:close()
+
+print("*** EXECUTING: " .. optArgs)
+os.execute(optArgs)
+print("\n*** NOTE: The generated QASM code should be adjusted to reflect actual qubit-lines used inorder to speed up the simulations...\n")
