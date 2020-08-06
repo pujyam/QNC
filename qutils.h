@@ -59,21 +59,21 @@ extern const double gateCost[Gend];
 typedef struct QG_t {
     cx_mat W;
     vector<uint64_t> arg;
-    uint64_t serial;
-    GateType type;
+    uint64_t serial=0;
+    GateType type=Gnull;
 } QG_t;
 
 typedef struct QNet_t {
-    bool useTop;
+    bool useTop=false;
     Mat<uint64_t> topology; //Adjacency matrix for the original directed machine-qubit-connectivity-graph
     vector<vector<vector<uint64_t>>> Paths; //To store the optimal paths from phys-qubit source 'u' to destination 'v'
 
-    bool useMap;
+    bool useMap=false;
     vector<uint64_t> physMap; //To store the mapping between the operator's logical qubits and the machine's physical qubits
 
     vector<vector<QG_t>> Gates; //One vector for each qubit timeline
-    int64_t nxtSerial; //Next gate's serial number in current netlist
-    uint8_t QubitSize; //Size of qreg needed for implementation (computed after taking physMap and topology into account)
+    int64_t nxtSerial=0; //Next gate's serial number in current netlist
+    uint8_t QubitSize=0; //Size of qreg needed for implementation (computed after taking physMap and topology into account)
 } QNet_t;
 
 // GLOBAL VARIABLES
