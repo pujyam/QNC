@@ -182,7 +182,7 @@ inline void usageExit(const string& execName) {
             "Usage: " << execName << " -oq out.qasm [-lq file{0..m}.qasm] -i[U|P|S] operator.op [-lq file{(m+1)..N}.qasm] [-nat] [-alt] [-I] [-v] [-map M] [-top T [-tW w]]\n"
             "\t-iU:  Reads a Unitary Matrix Operator from given file.\n"
             "\t       The input file format is a space seperated list of complex or real numbers, a matrix-row per line.\n"
-            "\t       Complex numbers are represented as a tuple within brackets: eg: (1.0, 2) stands for 1.0 + 2.0i\n"
+            "\t       Complex numbers are represented as a tuple within brackets: eg: (1.0,2) stands for 1.0 + 2.0i . Notice, there is no space allowed within the paranthesis.\n"
             "\t       Unitary operators have a worst case gate complexity ~O(4^n), where n=#qubits.\n"
             "\t       (one of -iU, -iP, or iS is mandatory)\n"
             "\t-iP:  Reads a Permutation Operator from the given file (in Cauchy's single line notation).\n"
