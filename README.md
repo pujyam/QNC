@@ -6,6 +6,7 @@ Compile unitary operators (ie., both algorithms and initial state preparations) 
 
 ## Author
 Author: Nandakishore Santhi
+
 nsanthi [at] lanl [.] gov
 
 ## License
